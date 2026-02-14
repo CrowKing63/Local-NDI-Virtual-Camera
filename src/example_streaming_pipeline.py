@@ -67,10 +67,11 @@ async def main():
         height=720,
     )
     
-    # Create frame decoder
+    # Create frame decoder with buffer size of 3 for smoother playback
     frame_decoder = FrameDecoder(
         width=1280,
         height=720,
+        buffer_size=3,  # Store last 3 frames for smoother playback
         on_frame=on_frame,
     )
     

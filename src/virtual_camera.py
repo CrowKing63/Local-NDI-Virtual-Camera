@@ -28,7 +28,23 @@ def _make_standby_frame(
     height: int = config.FRAME_HEIGHT,
     text: str = "Waiting for connection …",
 ) -> np.ndarray:
-    """Generate a placeholder frame shown when no stream is active."""
+    """
+    Generate a placeholder frame shown when no stream is active.
+
+    Parameters
+    ----------
+    width : int, optional
+        Width of the frame in pixels. Defaults to config.FRAME_WIDTH.
+    height : int, optional
+        Height of the frame in pixels. Defaults to config.FRAME_HEIGHT.
+    text : str, optional
+        Text to display on the standby frame. Defaults to "Waiting for connection …".
+
+    Returns
+    -------
+    np.ndarray
+        RGB image array (width x height x 3) with the standby frame.
+    """
     img = Image.new("RGB", (width, height), color=(24, 24, 32))
     draw = ImageDraw.Draw(img)
     try:
@@ -44,7 +60,20 @@ def _make_standby_frame(
 
 
 class VirtualCameraOutput:
-    """Bridges decoded frames → system virtual webcam."""
+    """
+    Bridges decoded frames → system virtual webcam.
+
+    This class manages a background thread that polls a frame source
+    (typically a FrameDecoder instance) for the latest RGB frame and
+    writes it to a pyvirtualcam virtual webcam device at a configurable
+    frame rate.
+
+    It handles:
+    - Thread lifecycle management (start/stop)
+    - Standby frame generation when no frames are available
+    - Backend selection (UnityCapture preferred, OBS fallback)
+    - Error handling and logging
+    """
 
     def __init__(
         self,
@@ -69,6 +98,10 @@ class VirtualCameraOutput:
         frame_source : callable
             A zero-arg callable that returns the latest numpy RGB frame
             (or None if no frame is available).
+
+        Returns
+        -------
+        None
         """
         if pyvirtualcam is None:
             raise RuntimeError(
@@ -85,6 +118,12 @@ class VirtualCameraOutput:
         self._thread.start()
 
     def stop(self) -> None:
+        """
+        Stop the virtual camera output thread and release resources.
+
+        This method signals the background thread to terminate, waits for it
+        to finish (up to 5 seconds), and logs the shutdown event.
+        """
         self._running = False
         if self._thread is not None:
             self._thread.join(timeout=5)
@@ -92,6 +131,13 @@ class VirtualCameraOutput:
         log.debug("Virtual camera output stopped")
 
     def _loop(self) -> None:
+        """
+        Main loop that periodically fetches frames from the source and
+        sends them to the virtual camera at the configured frame rate.
+
+        This method runs in a daemon thread and handles frame acquisition,
+        standby frame generation, and backend communication.
+        """
         interval = 1.0 / self.fps
         cam = None
         
