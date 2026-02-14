@@ -108,6 +108,7 @@ class RTMPAdapter(ProtocolAdapter):
 
         # Build FFmpeg command for RTMP server
         # Uses -rtmp_listen 1 to create an RTMP server that accepts connections
+        # No -i parameter needed in server mode - clients connect directly to the port
         cmd = [
             config.FFMPEG_BIN,
             "-loglevel",
@@ -116,14 +117,16 @@ class RTMPAdapter(ProtocolAdapter):
             "0",  # No timeout for listening
             "-rtmp_listen",
             "1",  # Enable RTMP server mode
-            "-i",
-            f"rtmp://0.0.0.0:{self._port}/{self._path}",
+            "-rtmp_addr",
+            f"0.0.0.0:{self._port}",
             "-f",
             "rawvideo",
             "-pix_fmt",
             "rgb24",
             "-s",
             f"{self._width}x{self._height}",
+            "-r",
+            str(config.FPS),
             "-flags",
             "low_delay",
             "-fflags",
@@ -147,8 +150,6 @@ class RTMPAdapter(ProtocolAdapter):
                     if hasattr(subprocess, "CREATE_NO_WINDOW")
                     else 0
                 ),
-                stdout_errors="ignore",
-                stderr_errors="ignore",
             )
         except Exception as e:
             raise RuntimeError(f"Failed to start FFmpeg RTMP server: {e}")

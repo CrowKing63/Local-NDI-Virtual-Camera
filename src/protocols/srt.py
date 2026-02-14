@@ -142,8 +142,7 @@ class SRTAdapter(ProtocolAdapter):
                     if hasattr(subprocess, "CREATE_NO_WINDOW")
                     else 0
                 ),
-                stdout_errors="ignore",
-                stderr_errors="ignore",
+                bufsize=0,
             )
         except Exception as e:
             raise RuntimeError(f"Failed to start FFmpeg SRT server: {e}")
