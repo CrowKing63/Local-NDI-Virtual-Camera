@@ -1,44 +1,113 @@
-# Local RTMP Virtual Camera (Vision Pro / iOS → Windows)
+# Local Virtual Camera (Vision Pro / iOS → Windows)
 
 Turn your Vision Pro, iPhone, or iPad into a high-quality virtual webcam for Windows. 
 **No SSL certificates, no HTTPS setup, and low-latency streaming.**
 
-Using the **RTMP** protocol, this tool provides a robust video bridge that works instantly on your local network.
+Using **RTMP**, **SRT**, or **WebRTC** protocols, this tool provides a robust video bridge that works instantly on your local network.
 
-## 🚀 Quick Start (RTMP Mode)
+## 🚀 Quick Start
 
-### 1. Windows Setup
-1. **Install Virtual Camera Driver**: Run `python src/setup_driver.py`.
-2. **Install FFmpeg**: Ensure FFmpeg is installed and in your PATH.
-3. **Run the App**: `python -m src`.
-4. **Start Streaming**: Right-click the tray icon and select **Start Streaming**. It will show your RTMP URL (e.g., `rtmp://192.168.x.x:2935/live/stream`).
+### 1. Install Dependencies
+```bash
+pip install -r requirements.txt
+```
 
-### 2. Vision Pro / iOS Setup
-1. Download **PRISM Live Studio** (Free) from the App Store.
-2. Open PRISM Live → Tap **Ready** (Yellow button) → Tap **Custom RTMP**.
-3. Tap **Add** (Add a new stream destination):
+### 2. Install Virtual Camera Driver
+Run as Administrator:
+```bash
+python src/setup_driver.py
+```
+
+### 3. Install FFmpeg (if not in PATH)
+```bash
+python src/setup_ffmpeg.py
+```
+
+### 4. Run the App
+```bash
+python -m src
+```
+
+### 5. Start Streaming
+1. Right-click the tray icon → **Start Streaming**
+2. Copy the RTMP/SRT URL shown in the menu
+3. On iOS/Vision Pro, use **PRISM Live Studio** or **Larix Broadcaster**
+
+### 6. Use in Windows Apps
+- Open Zoom, OBS, Teams, or any video app
+- Select **"Local Virtual Camera"** (or Unity Video Capture) as your webcam
+
+## 📱 iOS/Vision Pro Setup
+
+### PRISM Live Studio (Recommended)
+1. Download from App Store (Free)
+2. Open → Tap **Ready** → **Custom RTMP**
+3. Add new destination:
    - **Name**: Local VCam
    - **URL**: `rtmp://192.168.x.x:2935/live`
    - **Stream Key**: `stream`
-4. Go back to the main screen and tap **Go Live** to start streaming.
+4. Tap **Go Live**
 
-### 3. Use in Windows
-- Open Zoom, OBS, or Teams.
-- Select **"Local Virtual Camera"** (or Unity Video Capture) as your webcam.
+### Larix Broadcaster
+1. Download from App Store
+2. Connections → Add
+   - **URL**: `rtmp://192.168.x.x:2935/live`
+   - **Stream Name**: `stream`
+
+## 🔌 Supported Protocols
+
+| Protocol | Port | Best For |
+|----------|------|----------|
+| RTMP | 2935 | Broad compatibility |
+| SRT | 9000 | Lower latency, better error correction |
+| WebRTC | 8080 | Ultra-low latency (requires aiortc) |
+
+Switch protocols via tray menu: **Protocol** → Select RTMP/SRT/WebRTC
 
 ## 🛠️ Requirements
 - **Windows 10/11**
 - **Python 3.10+**
-- **Larix Broadcaster** (or any RTMP app like OBS Camera).
-- **Network**: Both devices must be on the same Wi-Fi/LAN.
+- **Network**: Both devices on same Wi-Fi/LAN
 
 ## 🔧 Troubleshooting
-- **Firewall**: If it doesn't connect, ensure Port **1935** (RTMP) and **8000** (Info) are allowed in Windows Firewall.
-- **Latency**: Ensure you are on 5GHz Wi-Fi for the best experience.
-- **Driver not found**: Run `python src/setup_driver.py` with Administrator privileges.
+
+### Connection Issues
+- **Firewall**: Allow ports 2935 (RTMP), 9000 (SRT), 8000 (HTTP) in Windows Firewall
+- **Driver not found**: Run `python src/setup_driver.py` as Administrator
+
+### Performance
+- Use 5GHz Wi-Fi for best results
+- Close other bandwidth-intensive applications
+
+### Driver Installation Failed
+1. Download UnityCapture driver manually from GitHub
+2. Place `UnityCaptureFilter64.dll` in the `driver/` folder
+3. Run `python src/setup_driver.py` again
 
 ## 📜 Why RTMP?
-Previous versions used a browser-based (WebCodecs) approach, but Safari's strict security requirements for SSL certificates made the setup extremely cumbersome. By switching to RTMP:
-- **Zero Configuration**: No Root CAs or manual profile trust settings.
-- **Native Performance**: Uses the device's native hardware encoder.
-- **Universal**: Works with any app that supports RTMP.
+Previous versions used WebCodecs, but Safari's SSL requirements made setup cumbersome. RTMP provides:
+- **Zero Configuration**: No Root CAs or profile trust settings
+- **Native Performance**: Uses device hardware encoder
+- **Universal**: Works with any RTMP-supporting app
+
+## 📁 Project Structure
+```
+src/
+├── main.py           # Application entry point
+├── decoder.py        # H.264 → RGB frame decoder
+├── virtual_camera.py # Virtual camera output
+├── protocols/        # RTMP, SRT, WebRTC adapters
+├── tray.py          # System tray UI
+├── config*.py       # Configuration
+└── setup_*.py       # Installation scripts
+```
+
+## 🧪 Testing
+```bash
+# Verify environment
+python src/verify_env.py
+
+# Run unit tests
+pip install pytest pytest-asyncio
+pytest src/test_*.py -v
+```

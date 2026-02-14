@@ -7,6 +7,7 @@ Provides a simple tray icon with:
   - Show QR code
   - Exit
 """
+
 import threading
 import logging
 import socket
@@ -40,18 +41,18 @@ def _create_icon_image(size: int = 64, streaming: bool = False) -> Image.Image:
 def _create_state_icon(
     size: int = 64,
     state: ConnectionState = ConnectionState.DISCONNECTED,
-    health: ConnectionHealth = ConnectionHealth.CRITICAL
+    health: ConnectionHealth = ConnectionHealth.CRITICAL,
 ) -> Image.Image:
     """
     Create tray icon based on connection state and health.
-    
+
     Icon colors:
     - DISCONNECTED: Gray
     - CONNECTING: Yellow
     - CONNECTED (excellent/good): Green
     - CONNECTED (poor/critical): Yellow with warning
     - RECONNECTING: Orange
-    
+
     Parameters
     ----------
     size : int
@@ -60,7 +61,7 @@ def _create_state_icon(
         Current connection state
     health : ConnectionHealth
         Current connection health (used when CONNECTED)
-    
+
     Returns
     -------
     Image.Image
@@ -68,7 +69,7 @@ def _create_state_icon(
     """
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    
+
     # Determine background color based on state and health
     if state == ConnectionState.DISCONNECTED:
         bg_color = (128, 128, 128)  # Gray
@@ -84,19 +85,22 @@ def _create_state_icon(
             bg_color = (255, 193, 7)  # Yellow (warning)
     else:
         bg_color = (128, 128, 128)  # Default gray
-    
+
     # Circle background
     draw.ellipse([(2, 2), (size - 2, size - 2)], fill=bg_color)
-    
+
     # Camera-lens circle
     r = size // 5
     cx, cy = size // 2, size // 2
     draw.ellipse([(cx - r, cy - r), (cx + r, cy + r)], fill=(255, 255, 255, 220))
     sr = r // 2
     draw.ellipse([(cx - sr, cy - sr), (cx + sr, cy + sr)], fill=bg_color)
-    
+
     # Add warning indicator for poor health when connected
-    if state == ConnectionState.CONNECTED and health in (ConnectionHealth.POOR, ConnectionHealth.CRITICAL):
+    if state == ConnectionState.CONNECTED and health in (
+        ConnectionHealth.POOR,
+        ConnectionHealth.CRITICAL,
+    ):
         # Small warning badge in bottom-right corner
         badge_size = size // 4
         badge_x = size - badge_size - 2
@@ -110,24 +114,36 @@ def _create_state_icon(
         draw.polygon(points, fill=(255, 87, 34))  # Orange warning
         # Exclamation mark
         draw.line(
-            [(badge_x + badge_size // 2, badge_y + badge_size // 4),
-             (badge_x + badge_size // 2, badge_y + badge_size // 2)],
+            [
+                (badge_x + badge_size // 2, badge_y + badge_size // 4),
+                (badge_x + badge_size // 2, badge_y + badge_size // 2),
+            ],
             fill=(255, 255, 255),
-            width=2
+            width=2,
         )
         draw.ellipse(
-            [(badge_x + badge_size // 2 - 1, badge_y + badge_size * 3 // 4 - 1),
-             (badge_x + badge_size // 2 + 1, badge_y + badge_size * 3 // 4 + 1)],
-            fill=(255, 255, 255)
+            [
+                (badge_x + badge_size // 2 - 1, badge_y + badge_size * 3 // 4 - 1),
+                (badge_x + badge_size // 2 + 1, badge_y + badge_size * 3 // 4 + 1),
+            ],
+            fill=(255, 255, 255),
         )
-    
+
     return img
 
 
 class TrayApp:
     """System tray icon for controlling the virtual camera pipeline."""
 
-    def __init__(self, on_start=None, on_stop=None, on_exit=None, on_settings=None, on_view_logs=None):
+    def __init__(
+        self,
+        on_start=None,
+        on_stop=None,
+        on_exit=None,
+        on_settings=None,
+        on_view_logs=None,
+        on_protocol_change=None,
+    ):
         """
         Parameters
         ----------
@@ -141,16 +157,20 @@ class TrayApp:
             Called when user clicks "Settings...".
         on_view_logs : callable
             Called when user clicks "View Logs/Diagnostics...".
+        on_protocol_change : callable
+            Called when user selects a different protocol from menu.
         """
         self._on_start = on_start
         self._on_stop = on_stop
         self._on_exit = on_exit
         self._on_settings = on_settings
         self._on_view_logs = on_view_logs
+        self._on_protocol_change = on_protocol_change
         self._streaming = False
         self._access_urls: list[str] = []
         self._icon: pystray.Icon | None = None
-        
+        self._current_protocol = "RTMP"
+
         # Connection state tracking
         self._connection_state = ConnectionState.DISCONNECTED
         self._connection_health = ConnectionHealth.CRITICAL
@@ -167,11 +187,11 @@ class TrayApp:
         self._access_urls = urls
         if self._icon:
             self._update_all()
-    
+
     def update_connection_state(self, state: ConnectionState) -> None:
         """
         Update tray icon based on connection state.
-        
+
         Parameters
         ----------
         state : ConnectionState
@@ -181,11 +201,11 @@ class TrayApp:
         if self._icon:
             self._update_all()
             log.info(f"Tray icon updated for state: {state.value}")
-    
+
     def update_connection_health(self, health: ConnectionHealth) -> None:
         """
         Update tray icon indicator for connection health.
-        
+
         Parameters
         ----------
         health : ConnectionHealth
@@ -201,28 +221,53 @@ class TrayApp:
         """Update icon, title (tooltip), and menu."""
         if not self._icon:
             return
-            
+
         # Update Icon
         self._icon.icon = _create_state_icon(
-            state=self._connection_state,
-            health=self._connection_health
+            state=self._connection_state, health=self._connection_health
         )
-        
+
         # Update Tooltip (title)
         state_str = self._connection_state.value.capitalize()
-        health_str = f" (Health: {self._connection_health.value.capitalize()})" if self._connection_state == ConnectionState.CONNECTED else ""
+        health_str = (
+            f" (Health: {self._connection_health.value.capitalize()})"
+            if self._connection_state == ConnectionState.CONNECTED
+            else ""
+        )
         self._icon.title = f"Local Virtual Camera - {state_str}{health_str}"
-        
+
         # Update Menu
         self._icon.menu = self._create_menu()
         self._icon.update_menu()
+
+    def set_protocol(self, protocol: str) -> None:
+        self._current_protocol = protocol
+        if self._icon:
+            self._update_all()
 
     def _create_menu(self) -> pystray.Menu:
         """Create the tray menu dynamically based on current state."""
         state_info = f"Status: {self._connection_state.value.capitalize()}"
         if self._connection_state == ConnectionState.CONNECTED:
             state_info += f" ({self._connection_health.value.capitalize()})"
-            
+
+        protocols = ["RTMP", "SRT", "WebRTC"]
+
+        def make_protocol_callback(p):
+            def callback(icon, item):
+                if self._on_protocol_change:
+                    self._on_protocol_change(p)
+
+            return callback
+
+        protocol_menu_items = [
+            pystray.MenuItem(
+                f"{p} {'✓' if p == self._current_protocol else ''}",
+                make_protocol_callback(p),
+            )
+            for p in protocols
+        ]
+
         menu_items = [
             pystray.MenuItem(state_info, lambda _: None, enabled=False),
             pystray.Menu.SEPARATOR,
@@ -231,27 +276,33 @@ class TrayApp:
                 self._toggle,
                 default=True,
             ),
+            pystray.Menu.SEPARATOR,
+            pystray.Menu("Protocol", *protocol_menu_items),
         ]
-        
+
         if self._access_urls:
             menu_items.append(pystray.Menu.SEPARATOR)
             # URL Display
-            for i, url in enumerate(self._access_urls[:3]): # Max 3 URLs in menu
+            for i, url in enumerate(self._access_urls[:3]):  # Max 3 URLs in menu
                 label = f"URL: {url}"
                 if len(label) > 40:
                     label = label[:37] + "..."
-                menu_items.append(pystray.MenuItem(label, lambda _: self._copy_specific_url(url)))
-            
+                menu_items.append(
+                    pystray.MenuItem(label, lambda _: self._copy_specific_url(url))
+                )
+
             menu_items.append(pystray.MenuItem("Copy Primary URL", self._copy_url))
             menu_items.append(pystray.MenuItem("Show QR Code", self._show_qr))
 
-        menu_items.extend([
-            pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Settings...", self._show_settings),
-            pystray.MenuItem("View Logs...", self._show_logs),
-            pystray.MenuItem("Exit", self._exit),
-        ])
-        
+        menu_items.extend(
+            [
+                pystray.Menu.SEPARATOR,
+                pystray.MenuItem("Settings...", self._show_settings),
+                pystray.MenuItem("View Logs...", self._show_logs),
+                pystray.MenuItem("Exit", self._exit),
+            ]
+        )
+
         return pystray.Menu(*menu_items)
 
     def run(self) -> None:
@@ -260,8 +311,7 @@ class TrayApp:
             name="LocalVirtualCamera",
             title="Local Virtual Camera",
             icon=_create_state_icon(
-                state=self._connection_state,
-                health=self._connection_health
+                state=self._connection_state, health=self._connection_health
             ),
             menu=self._create_menu(),
         )
@@ -291,6 +341,7 @@ class TrayApp:
     def _copy_to_clipboard(self, text: str):
         try:
             import subprocess
+
             subprocess.Popen(
                 ["clip.exe"],
                 stdin=subprocess.PIPE,
@@ -304,10 +355,8 @@ class TrayApp:
         if not self._access_urls:
             return
         url = self._access_urls[0]
-        threading.Thread(
-            target=self._display_qr, args=(url,), daemon=True
-        ).start()
-    
+        threading.Thread(target=self._display_qr, args=(url,), daemon=True).start()
+
     def _show_settings(self, icon, item):
         if self._on_settings:
             # Run settings in a thread to avoid blocking the tray icon
@@ -326,6 +375,29 @@ class TrayApp:
         icon.stop()
         if self._on_exit:
             self._on_exit()
+
+    # ── notifications ─────────────────────────────────────
+
+    def show_notification(
+        self, title: str, message: str, is_error: bool = False
+    ) -> None:
+        """Show a Windows toast notification."""
+        try:
+            from win10toast import ToastNotifier
+
+            toaster = ToastNotifier()
+            toaster.show_toast(
+                title=title,
+                msg=message,
+                duration=3,
+                icon_path=None,
+                threaded=False,
+            )
+            log.info(f"Notification shown: {title} - {message}")
+        except ImportError:
+            log.debug("win10toast not available, skipping notification")
+        except Exception:
+            log.exception("Failed to show notification")
 
     # ── QR display ───────────────────────────────────────
 
@@ -352,7 +424,10 @@ class TrayApp:
             lbl_img.pack(padx=10, pady=(10, 4))
 
             lbl_url = tk.Label(
-                root, text=url, fg="#8888a0", bg="#16161e",
+                root,
+                text=url,
+                fg="#8888a0",
+                bg="#16161e",
                 font=("Segoe UI", 10),
             )
             lbl_url.pack(pady=(0, 10))

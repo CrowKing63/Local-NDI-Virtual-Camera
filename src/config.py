@@ -1,11 +1,13 @@
 """
 Configuration constants for Local Virtual Camera.
 """
+
 import os
 import sys
 import logging
 
 import shutil
+
 
 # ── Dependency Check ─────────────────────────────────────
 def _find_ffmpeg() -> str | None:
@@ -14,11 +16,13 @@ def _find_ffmpeg() -> str | None:
     path = shutil.which("ffmpeg")
     if path:
         return path
-    
+
     # Check common locations
     common_paths = [
         "ffmpeg.exe",  # Current directory
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "ffmpeg.exe"), # Project root
+        os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "..", "ffmpeg.exe"
+        ),  # Project root
         r"C:\ffmpeg\bin\ffmpeg.exe",
         r"C:\Program Files\ffmpeg\bin\ffmpeg.exe",
         r"C:\Program Files (x86)\ffmpeg\bin\ffmpeg.exe",
@@ -29,6 +33,7 @@ def _find_ffmpeg() -> str | None:
         if os.path.isfile(p):
             return os.path.abspath(p)
     return None
+
 
 FFMPEG_BIN = _find_ffmpeg()
 
@@ -43,6 +48,7 @@ FRAME_WIDTH = 1280
 FRAME_HEIGHT = 720
 FPS = 30
 
+
 # ── Paths ────────────────────────────────────────────────
 def _app_data_dir() -> str:
     """Return a writable directory for app-generated files (certs, logs)."""
@@ -51,14 +57,15 @@ def _app_data_dir() -> str:
     os.makedirs(d, exist_ok=True)
     return d
 
-APP_DATA_DIR = _app_data_dir()
+
 APP_DATA_DIR = _app_data_dir()
 # CERT_DIR removed as we no longer use SSL
 
 # ── Logging ──────────────────────────────────────────────
-LOG_LEVEL = logging.INFO      # Changed from WARNING to see connection logs
+LOG_LEVEL = logging.INFO  # Changed from WARNING to see connection logs
 LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 LOG_FILE = os.path.join(APP_DATA_DIR, "app.log")
+
 
 # ── Resource helpers (for PyInstaller bundle) ────────────
 def resource_path(relative: str) -> str:

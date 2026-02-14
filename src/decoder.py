@@ -12,6 +12,7 @@ interruption.
 Updated to work with protocol abstraction layer - accepts any ProtocolAdapter
 (RTMP, SRT, WebRTC) instead of being hardcoded to RTMP.
 """
+
 import subprocess
 import threading
 import shutil
@@ -84,12 +85,20 @@ class FrameDecoder:
         self._on_frame = on_frame
         self._on_error = on_error
         self._protocol_adapter = None
+        self._is_webrtc = False
         self._reader_thread: threading.Thread | None = None
         self._error_thread: threading.Thread | None = None
         self._lock = threading.Lock()
         self._running = False
         self._frame_count = 0
         self._error_count = 0
+        self._last_frame_time = 0.0
+
+    def clear_buffer(self) -> None:
+        """Clear the frame buffer to free memory."""
+        with self._lock:
+            self._frame_buffer.clear()
+        log.debug("Frame buffer cleared")
 
     # ── lifecycle ────────────────────────────────────────
 
@@ -102,12 +111,13 @@ class FrameDecoder:
         protocol_adapter : ProtocolAdapter
             The protocol adapter providing the video stream.
             Must have a get_stdout() method that returns a subprocess.Popen
-            with stdout containing raw RGB24 frames.
+            with stdout containing raw RGB24 frames, OR a get_frame()
+            method for WebRTC.
 
         Raises
         ------
         RuntimeError
-            If the protocol adapter is not started or doesn't provide stdout
+            If the protocol adapter is not started or doesn't provide stdout/get_frame
 
         Returns
         -------
@@ -118,13 +128,25 @@ class FrameDecoder:
             return
 
         self._protocol_adapter = protocol_adapter
+        self._is_webrtc = False
 
-        # Get the FFmpeg process from the protocol adapter
-        # Protocol adapters that use FFmpeg should provide get_stdout() method
+        # Check if adapter has get_frame method (WebRTC)
+        if hasattr(protocol_adapter, "get_frame"):
+            self._is_webrtc = True
+            log.info("Starting frame decoder in WebRTC mode")
+            self._running = True
+
+            self._reader_thread = threading.Thread(
+                target=self._read_frames_webrtc, daemon=True, name="webrtc-reader"
+            )
+            self._reader_thread.start()
+            return
+
+        # Check for FFmpeg-based adapters (RTMP, SRT)
         if not hasattr(protocol_adapter, "get_stdout"):
             raise RuntimeError(
                 f"Protocol adapter {type(protocol_adapter).__name__} does not "
-                "provide get_stdout() method for frame reading"
+                "provide get_stdout() or get_frame() method for frame reading"
             )
 
         proc = protocol_adapter.get_stdout()
@@ -286,9 +308,7 @@ class FrameDecoder:
                 if len(raw) != self._frame_bytes:
                     # Short read - log error but continue with last valid frame
                     if self._running:
-                        error_msg = (
-                            f"Short read from decoder: expected {self._frame_bytes} bytes, got {len(raw)}"
-                        )
+                        error_msg = f"Short read from decoder: expected {self._frame_bytes} bytes, got {len(raw)}"
                         log.warning(error_msg)
                         self._error_count += 1
                         if self._on_error:
@@ -322,6 +342,47 @@ class FrameDecoder:
 
         log.debug("Frame reader thread exiting")
 
+    def _read_frames_webrtc(self) -> None:
+        """Read frames from WebRTC adapter using get_frame() method."""
+        if self._protocol_adapter is None:
+            log.error("No protocol adapter set")
+            return
+
+        if not hasattr(self._protocol_adapter, "get_frame"):
+            log.error("Protocol adapter does not have get_frame method")
+            return
+
+        log.debug("WebRTC frame reader thread started")
+
+        while self._running:
+            try:
+                frame = self._protocol_adapter.get_frame()
+
+                if frame is None:
+                    import time
+
+                    time.sleep(0.001)
+                    continue
+
+                with self._lock:
+                    self._frame_buffer.append(frame)
+                    self._frame_count += 1
+
+                if self._on_frame:
+                    self._on_frame(frame)
+
+            except Exception as e:
+                if self._running:
+                    error_msg = f"Error reading WebRTC frame: {e}"
+                    log.error(error_msg)
+                    self._error_count += 1
+                    if self._on_error:
+                        self._on_error(error_msg)
+                    continue
+
+        log.debug("WebRTC frame reader thread exiting")
+
+    def _read_errors(self) -> None:
         """
         Read and log ffmpeg stderr from protocol adapter.
 
@@ -333,26 +394,39 @@ class FrameDecoder:
         The method continues monitoring ffmpeg stderr for errors and warnings.
         It reads lines from stderr, logs them, and triggers the error callback
         for error messages. Non-error lines are logged at debug level.
-
         """
+        if self._protocol_adapter is None:
+            log.error("No protocol adapter set for error reading")
+            return
+
+        if self._is_webrtc:
+            log.debug("WebRTC mode - no stderr to read")
+            return
+
+        proc = self._protocol_adapter.get_stdout()
+        if proc is None or proc.stderr is None:
+            log.error("Protocol adapter stderr not available")
+            return
+
         while self._running:
             try:
                 line = proc.stderr.readline()
                 if not line:
                     break
 
-                line_str = line.decode('utf-8', errors='ignore').strip()
+                line_str = line.decode("utf-8", errors="ignore").strip()
 
                 # Check for error indicators
-                if any(keyword in line_str.lower() for keyword in [
-                    'error', 'failed', 'invalid', 'corrupt'
-                ]):
+                if any(
+                    keyword in line_str.lower()
+                    for keyword in ["error", "failed", "invalid", "corrupt"]
+                ):
                     log.error("FFmpeg error: %s", line_str)
                     self._error_count += 1
                     if self._on_error:
                         self._on_error(f"Decode error: {line_str}")
                     # Continue monitoring - don't crash on errors
-                elif 'warning' in line_str.lower():
+                elif "warning" in line_str.lower():
                     log.warning("FFmpeg warning: %s", line_str)
                 else:
                     log.debug("FFmpeg: %s", line_str)

@@ -8,6 +8,7 @@ Usage:
     python -m src.main          # development
     LocalVirtualCamera.exe      # packaged
 """
+
 import asyncio
 import threading
 import logging
@@ -46,30 +47,31 @@ class Application:
         self._decoder = FrameDecoder(
             width=self._config.frame_width,
             height=self._config.frame_height,
-            on_frame=self._on_frame_decoded
+            on_frame=self._on_frame_decoded,
         )
         self._vcam = VirtualCameraOutput()
         self._protocol_factory = ProtocolFactory()
         self._protocol_adapter = None
-        
+
         # Connection management
         self._conn_mgr = ConnectionManager(
             on_state_change=self._on_connection_state_change,
             on_health_change=self._on_connection_health_change,
-            on_reconnect_trigger=self._on_reconnect_trigger
+            on_reconnect_trigger=self._on_reconnect_trigger,
         )
 
         self._server = StreamServer(
             on_connect=self._on_sender_connect,
             on_disconnect=self._on_sender_disconnect,
         )
-        
+
         self._tray = TrayApp(
             on_start=self._start_streaming,
             on_stop=self._stop_streaming,
             on_exit=self._exit,
             on_settings=self._show_settings,
-            on_view_logs=self._show_logs
+            on_view_logs=self._show_logs,
+            on_protocol_change=self._on_protocol_change,
         )
         self._streaming = False
 
@@ -82,10 +84,11 @@ class Application:
 
         # 0. Dependency Checks
         from .installer.dependency_manager import DependencyManager
+
         dep_mgr = DependencyManager(ffmpeg_bin=config.FFMPEG_BIN or "ffmpeg")
         ffmpeg_ok, ffmpeg_msg = dep_mgr.check_ffmpeg()
         vcam_ok, vcam_msg = dep_mgr.check_unity_capture()
-        
+
         if not ffmpeg_ok:
             log.error("FFmpeg check failed: %s", ffmpeg_msg)
             # We still show the tray icon but notify the user
@@ -104,10 +107,20 @@ class Application:
             # Show initial notification if dependencies are missing
             if self._tray:
                 if not ffmpeg_ok:
-                    threading.Timer(2.0, lambda: self._tray.icon.notify(ffmpeg_msg, "FFmpeg Missing")).start()
+                    threading.Timer(
+                        2.0,
+                        lambda: self._tray.show_notification(
+                            "FFmpeg Missing", ffmpeg_msg, is_error=True
+                        ),
+                    ).start()
                 elif not vcam_ok:
-                    threading.Timer(2.0, lambda: self._tray.icon.notify(vcam_msg, "Virtual Camera Driver Missing")).start()
-            
+                    threading.Timer(
+                        2.0,
+                        lambda: self._tray.show_notification(
+                            "Virtual Camera Driver Missing", vcam_msg, is_error=True
+                        ),
+                    ).start()
+
             self._tray.run()
         except Exception as e:
             log.exception("Tray application crashed")
@@ -132,15 +145,21 @@ class Application:
                 on_connect=self._on_sender_connect,
                 on_disconnect=self._on_sender_disconnect,
                 width=self._config.frame_width,
-                height=self._config.frame_height
+                height=self._config.frame_height,
             )
         except Exception as e:
             log.exception("Failed to create protocol adapter")
-            self._tray.icon.notify(f"Failed to create protocol adapter: {e}", "Error")
+            self._tray.show_notification(
+                "Error", f"Failed to create protocol adapter: {e}", is_error=True
+            )
             return
 
         # 2. Start Adapter (async)
-        port = self._config.rtmp_port if self._config.protocol == ProtocolType.RTMP else self._config.srt_port
+        port = (
+            self._config.rtmp_port
+            if self._config.protocol == ProtocolType.RTMP
+            else self._config.srt_port
+        )
         future = asyncio.run_coroutine_threadsafe(
             self._protocol_adapter.start(port=port), self._loop
         )
@@ -148,7 +167,9 @@ class Application:
             future.result(timeout=10)
         except Exception as e:
             log.error("Protocol adapter failed to start: %s", e)
-            self._tray.icon.notify(f"Failed to start {self._config.protocol.value} server: {e}", "Error")
+            self._tray.show_notification(
+                f"Failed to start {self._config.protocol.value} server: {e}", "Error"
+            )
             return
 
         # 3. Start Decoder
@@ -156,7 +177,9 @@ class Application:
             self._decoder.start(self._protocol_adapter)
         except Exception as e:
             log.error("Decoder failed: %s", e)
-            self._tray.icon.notify(f"Decoder failed (FFmpeg missing?): {e}", "Error")
+            self._tray.show_notification(
+                "Error", f"Decoder failed (FFmpeg missing?): {e}", is_error=True
+            )
             asyncio.run_coroutine_threadsafe(self._protocol_adapter.stop(), self._loop)
             return
 
@@ -172,9 +195,7 @@ class Application:
         # 5. Start Info Server (async)
         self._server.set_protocol_adapter(self._protocol_adapter)
         self._server.set_http_port(self._config.http_port)
-        future = asyncio.run_coroutine_threadsafe(
-            self._server.start(), self._loop
-        )
+        future = asyncio.run_coroutine_threadsafe(self._server.start(), self._loop)
         try:
             future.result(timeout=10)
         except Exception as e:
@@ -186,10 +207,14 @@ class Application:
         self._conn_mgr.set_auto_reconnect(self._config.auto_reconnect)
 
         self._streaming = True
-        self._tray.set_access_urls(self._protocol_adapter.get_connection_urls(self._server._local_ips))
+        self._tray.set_access_urls(
+            self._protocol_adapter.get_connection_urls(self._server._local_ips)
+        )
         self._tray.set_streaming(True)
-        self._tray.update_connection_state(ConnectionState.DISCONNECTED) # Initial state
-        
+        self._tray.update_connection_state(
+            ConnectionState.DISCONNECTED
+        )  # Initial state
+
         log.info("Pipeline ready. Protocol: %s", self._config.protocol.value)
 
     def _stop_streaming(self) -> None:
@@ -237,10 +262,12 @@ class Application:
         """Callback from connection manager when state changes."""
         log.info("Connection state changed: %s", state.value)
         self._tray.update_connection_state(state)
-        
+
         # If we just connected, update total URLs (might have changed based on adapter)
         if state == ConnectionState.CONNECTED and self._protocol_adapter:
-            self._tray.set_access_urls(self._protocol_adapter.get_connection_urls(self._server._local_ips))
+            self._tray.set_access_urls(
+                self._protocol_adapter.get_connection_urls(self._server._local_ips)
+            )
 
     def _on_connection_health_change(self, health: ConnectionHealth) -> None:
         """Callback from connection manager when health changes."""
@@ -259,11 +286,15 @@ class Application:
         """Helper to restart the protocol adapter during reconnection."""
         if not self._protocol_adapter:
             return
-            
+
         log.info("Restarting protocol adapter …")
         await self._protocol_adapter.stop()
-        
-        port = self._config.rtmp_port if self._config.protocol == ProtocolType.RTMP else self._config.srt_port
+
+        port = (
+            self._config.rtmp_port
+            if self._config.protocol == ProtocolType.RTMP
+            else self._config.srt_port
+        )
         try:
             await self._protocol_adapter.start(port=port)
             # Re-start decoder with the same adapter instance (which now has a new process)
@@ -287,20 +318,23 @@ class Application:
     def _show_settings(self) -> None:
         """Show the settings dialog and handle results."""
         log.info("Opening settings dialog …")
-        
+
         def on_save(new_config: AppConfig):
             log.info("Settings saved. Applying changes …")
             # 1. Update config
             self._config = new_config
             self._config_mgr.save(new_config)
-            
+
             # 2. Update components that can be updated live
             self._conn_mgr.set_auto_reconnect(new_config.auto_reconnect)
-            
+
             # 3. If streaming, some changes require restart
             if self._streaming:
-                self._tray.icon.notify("Settings saved. Restart streaming to apply protocol or port changes.", "Settings Upated")
-        
+                self._tray.show_notification(
+                    "Settings Updated",
+                    "Settings saved. Restart streaming to apply protocol or port changes.",
+                )
+
         dialog = SettingsDialog(self._config, on_save=on_save)
         dialog.show()
 
@@ -309,6 +343,33 @@ class Application:
         log.info("Opening log viewer …")
         viewer = LogViewer(log_file=config.LOG_FILE)
         viewer.show()
+
+    def _on_protocol_change(self, protocol: str) -> None:
+        """Handle protocol change from tray menu."""
+        try:
+            protocol_enum = ProtocolType(protocol.upper())
+        except ValueError:
+            log.error(f"Invalid protocol: {protocol}")
+            return
+
+        log.info(f"Protocol changed to {protocol}")
+        self._config.protocol = protocol_enum
+        self._config_mgr.save(self._config)
+
+        self._tray.set_protocol(protocol)
+
+        if self._streaming:
+            self._tray.show_notification(
+                "Protocol Changed",
+                f"Switched to {protocol}. Restart streaming to apply.",
+                is_error=False,
+            )
+        else:
+            self._tray.show_notification(
+                "Protocol Selected",
+                f"{protocol} will be used on next stream start.",
+                is_error=False,
+            )
 
     # ── internal ─────────────────────────────────────────
 
@@ -321,14 +382,14 @@ class Application:
         # Create console handler
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(logging.Formatter(config.LOG_FORMAT))
-        
+
         # Create file handler
         file_handler = logging.FileHandler(config.LOG_FILE, encoding="utf-8")
         file_handler.setFormatter(logging.Formatter(config.LOG_FORMAT))
-        
+
         # Configure root logger
         root = logging.getLogger()
-        if not root.handlers: # Avoid duplicates
+        if not root.handlers:  # Avoid duplicates
             root.setLevel(config.LOG_LEVEL)
             root.addHandler(console_handler)
             root.addHandler(file_handler)

@@ -15,3 +15,7 @@ env/
 .idea/
 .vscode/
 *.log
+
+# Exclude large FFmpeg binaries and archives
+ffmpeg.zip
+ffmpeg-master-latest-win64-gpl/

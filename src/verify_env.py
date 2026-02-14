@@ -34,14 +34,16 @@ else:
     local_ffmpeg = os.path.abspath("ffmpeg.exe")
     print(f"Checking local {local_ffmpeg}: {os.path.exists(local_ffmpeg)}")
 
-# 2. Check Port 10000
-print("\n[2] Checking Port 10000...")
-try:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("0.0.0.0", 10000))
-        print("Port 10000 is free (Bound successfully).")
-except OSError as e:
-    print(f"Port 10000 is BUSY/LOCKED: {e}")
+# 2. Check Ports
+print("\n[2] Checking ports (RTMP, SRT, HTTP)...")
+ports = [2935, 9000, 8000]
+for port in ports:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("0.0.0.0", port))
+            print(f"Port {port}: FREE")
+    except OSError as e:
+        print(f"Port {port}: BUSY - {e}")
 
 # 3. Check Driver
 print("\n[3] Checking Unity Capture Driver...")
