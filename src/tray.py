@@ -251,59 +251,44 @@ class TrayApp:
         if self._connection_state == ConnectionState.CONNECTED:
             state_info += f" ({self._connection_health.value.capitalize()})"
 
-        protocols = ["RTMP", "SRT", "WebRTC"]
+        start_label = "Stop Streaming" if self._streaming else "Start Streaming"
 
-        def make_protocol_callback(p):
-            def callback(icon, item):
+        # Protocol submenu
+        def create_protocol_menu():
+            def select_rtmp(item):
                 if self._on_protocol_change:
-                    self._on_protocol_change(p)
+                    self._on_protocol_change("RTMP")
 
-            return callback
+            def select_srt(item):
+                if self._on_protocol_change:
+                    self._on_protocol_change("SRT")
 
-        protocol_menu_items = [
-            pystray.MenuItem(
-                f"{p} {'✓' if p == self._current_protocol else ''}",
-                make_protocol_callback(p),
+            def select_webrtc(item):
+                if self._on_protocol_change:
+                    self._on_protocol_change("WebRTC")
+
+            rtmp_check = " [x]" if self._current_protocol == "RTMP" else ""
+            srt_check = " [x]" if self._current_protocol == "SRT" else ""
+            webrtc_check = " [x]" if self._current_protocol == "WebRTC" else ""
+
+            return pystray.Menu(
+                pystray.MenuItem(f"RTMP{rtmp_check}", select_rtmp),
+                pystray.MenuItem(f"SRT{srt_check}", select_srt),
+                pystray.MenuItem(f"WebRTC{webrtc_check}", select_webrtc),
             )
-            for p in protocols
-        ]
 
-        menu_items = [
+        menu = pystray.Menu(
             pystray.MenuItem(state_info, lambda _: None, enabled=False),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem(
-                lambda _: "Stop Streaming" if self._streaming else "Start Streaming",
-                self._toggle,
-                default=True,
-            ),
+            pystray.MenuItem(start_label, self._toggle, default=True),
             pystray.Menu.SEPARATOR,
-            pystray.Menu("Protocol", *protocol_menu_items),
-        ]
-
-        if self._access_urls:
-            menu_items.append(pystray.Menu.SEPARATOR)
-            # URL Display
-            for i, url in enumerate(self._access_urls[:3]):  # Max 3 URLs in menu
-                label = f"URL: {url}"
-                if len(label) > 40:
-                    label = label[:37] + "..."
-                menu_items.append(
-                    pystray.MenuItem(label, lambda _: self._copy_specific_url(url))
-                )
-
-            menu_items.append(pystray.MenuItem("Copy Primary URL", self._copy_url))
-            menu_items.append(pystray.MenuItem("Show QR Code", self._show_qr))
-
-        menu_items.extend(
-            [
-                pystray.Menu.SEPARATOR,
-                pystray.MenuItem("Settings...", self._show_settings),
-                pystray.MenuItem("View Logs...", self._show_logs),
-                pystray.MenuItem("Exit", self._exit),
-            ]
+            pystray.MenuItem("Settings...", self._show_settings),
+            pystray.MenuItem("View Logs...", self._show_logs),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Exit", self._exit),
         )
 
-        return pystray.Menu(*menu_items)
+        return menu
 
     def run(self) -> None:
         """Run the tray icon (blocking — call from the main thread)."""

@@ -19,3 +19,4 @@ env/
 # Exclude large FFmpeg binaries and archives
 ffmpeg.zip
 ffmpeg-master-latest-win64-gpl/
+nul

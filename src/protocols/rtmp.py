@@ -147,6 +147,8 @@ class RTMPAdapter(ProtocolAdapter):
                     if hasattr(subprocess, "CREATE_NO_WINDOW")
                     else 0
                 ),
+                stdout_errors="ignore",
+                stderr_errors="ignore",
             )
         except Exception as e:
             raise RuntimeError(f"Failed to start FFmpeg RTMP server: {e}")
