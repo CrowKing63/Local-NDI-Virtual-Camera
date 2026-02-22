@@ -1,0 +1,36 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Virtual Camera App",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "src"],
+      "port": 8000
+    },
+    {
+      "name": "Verify Environment",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["src/verify_env.py"],
+      "port": 0
+    },
+    {
+      "name": "Setup FFmpeg",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["src/setup_ffmpeg.py"],
+      "port": 0
+    },
+    {
+      "name": "Setup Driver",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["src/setup_driver.py"],
+      "port": 0
+    },
+    {
+      "name": "Run Tests",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "pytest", "src/", "-v"],
+      "port": 0
+    }
+  ],
+  "autoVerify": true
+}
