@@ -107,18 +107,13 @@ class RTMPAdapter(ProtocolAdapter):
         self._path = path or config.RTMP_PATH
 
         # Build FFmpeg command for RTMP server
-        # Uses -rtmp_listen 1 to create an RTMP server that accepts connections
-        # No -i parameter needed in server mode - clients connect directly to the port
+        # Uses ?listen=1 URL parameter — avoids FFmpeg 7.x listen_timeout=-1000 bug
         cmd = [
             config.FFMPEG_BIN,
             "-loglevel",
             "info",
-            "-listen_timeout",
-            "0",  # No timeout for listening
-            "-rtmp_listen",
-            "1",  # Enable RTMP server mode
-            "-rtmp_addr",
-            f"0.0.0.0:{self._port}",
+            "-i",
+            f"rtmp://0.0.0.0:{self._port}/{self._path}?listen=1",
             "-f",
             "rawvideo",
             "-pix_fmt",
